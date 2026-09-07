@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#07141b">
+  <title>Ice Hockey Drone</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-mode="daily">
+  <section id="authGate" class="auth-gate" aria-labelledby="authTitle">
+    <form id="authForm" class="auth-card">
+      <span class="auth-kicker">PILOT ACCESS</span>
+      <h2 id="authTitle">LOG IN</h2>
+      <p id="authCopy">Log in to enter today's race.</p>
+      <div class="auth-tabs" role="tablist" aria-label="Account action">
+        <button id="loginTabButton" type="button" class="active">LOG IN</button>
+        <button id="signupTabButton" type="button">CREATE ACCOUNT</button>
+      </div>
+      <label>
+        <span>USERNAME</span>
+        <input id="authUsernameInput" type="text" minlength="3" maxlength="16" pattern="[a-z0-9]{3,16}" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+        <small>3–16 lowercase letters and numbers</small>
+      </label>
+      <label>
+        <span>PASSWORD</span>
+        <input id="authPasswordInput" type="password" minlength="6" maxlength="72" autocomplete="current-password" required>
+        <small id="authPasswordHint">Enter your password</small>
+      </label>
+      <button id="authSubmitButton" class="auth-submit" type="submit">LOG IN</button>
+      <small id="authStatus" class="auth-status" role="status"></small>
+    </form>
+  </section>
+
+  <main id="gameShell" class="game-shell" inert aria-hidden="true">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark"></span>
+        <div>
+          <h1>ICE HOCKEY DRONE</h1>
+          <p>DAILY RACE // A NEW TRACK EVERY DAY</p>
+        </div>
+      </div>
+      <div class="hud" aria-label="Game status">
+        <div class="mode-switch" role="tablist" aria-label="Game mode">
+          <button id="dailyModeButton" type="button" class="active">DAILY</button>
+          <button id="freeModeButton" type="button">FREE PLAY</button>
+        </div>
+        <div class="daily-meta" id="dailyMeta">
+          <span id="dailyDateLabel">TODAY</span>
+          <strong id="dailyDateValue">--.--.----</strong>
+          <small id="dailyCountdown">Next map in --:--:--</small>
+        </div>
+        <label class="seed-control" for="seedInput">
+          <span>SEED</span>
+          <div class="seed-row">
+            <input id="seedInput" type="text" value="6-6-6gh4df6h" spellcheck="false" autocomplete="off">
+            <button id="generateButton" type="button">GENERATE</button>
+            <button id="forgetGhostButton" type="button">FORGET GHOST</button>
+          </div>
+          <small id="seedStatus">6x6 · waiting to generate</small>
+        </label>
+        <label class="ice-control" for="slipSlider">
+          <span>SLIP <output id="slipValue" for="slipSlider">260 %</output></span>
+          <input id="slipSlider" type="range" min="0" max="300" value="260" step="5" disabled>
+          <small>GRIP</small><small>ICE</small>
+        </label>
+        <div class="hud-item">
+          <span>TIME</span>
+          <strong id="timer">00.00</strong>
+        </div>
+        <div class="hud-item">
+          <span>PB</span>
+          <strong id="bestTime">--.--</strong>
+        </div>
+        <div class="hud-item" id="ghostHud">
+          <span>GHOST</span>
+          <strong id="ghostHudValue">WR</strong>
+        </div>
+        <button id="lobbyToggleButton" class="hud-item hud-button" type="button">
+          <span>MENU</span>
+          <strong>BOARD</strong>
+        </button>
+      </div>
+    </header>
+
+    <div class="play-layout">
+      <aside id="lobby" class="lobby">
+        <div class="lobby-head">
+          <div>
+            <strong id="lobbyKicker">TODAY</strong>
+            <span id="lobbyDate">Daily race</span>
+          </div>
+          <div class="lobby-tabs">
+            <button id="todayButton" type="button" class="active">TODAY</button>
+            <button id="yesterdayButton" type="button">YESTERDAY</button>
+          </div>
+        </div>
+        <p id="lobbyCountdown">Next map in --:--:--</p>
+        <div class="lobby-account">
+          <label class="lobby-name" for="playerNameInput">
+            <span>PILOT</span>
+            <input id="playerNameInput" type="text" maxlength="16" readonly tabindex="-1">
+          </label>
+          <button id="logoutButton" type="button">LOG OUT</button>
+        </div>
+        <div class="lobby-records">
+          <div>
+            <span>WR</span>
+            <strong id="lobbyWr">--.--</strong>
+            <small id="lobbyWrName">—</small>
+          </div>
+          <div>
+            <span>YOU</span>
+            <strong id="lobbyPb">--.--</strong>
+            <small>local PB</small>
+          </div>
+        </div>
+        <div class="ghost-picks" aria-label="Ghost selection">
+          <span>GHOST</span>
+          <button id="ghostWrButton" type="button" data-ghost="wr">WR</button>
+          <button id="ghostSelfButton" type="button" data-ghost="self">YOU</button>
+          <button id="ghostOffButton" type="button" data-ghost="off">OFF</button>
+        </div>
+        <ol id="leaderboardList"></ol>
+        <small id="leaderboardHint">Pick a ghost and drive with WASD</small>
+      </aside>
+      <section class="arena-wrap">
+      <canvas id="game" width="1200" height="700" aria-label="Ice Hockey Drone arena"></canvas>
+      <div id="startPrompt" class="start-prompt">
+        <strong>GO</strong>
+        <span>WASD OR ARROWS START THE CLOCK · SPACE DRIFT</span>
+      </div>
+      <div id="raceStrip" class="race-strip" hidden>
+        <span>GHOST <strong id="raceGhostLabel">OFF</strong></span>
+      </div>
+      <div id="finishPanel" class="finish-panel" hidden>
+        <span>TRACK COMPLETE</span>
+        <strong id="finishTime">00.00 s</strong>
+        <p id="finishPlace">—</p>
+        <p id="finishDelta">—</p>
+        <p id="finishRating">Clean run.</p>
+        <div id="finishLeaderboard" class="finish-leaderboard" hidden>
+          <label class="finish-name" for="finishNameInput">
+            <span>PILOT</span>
+            <div class="seed-row">
+              <input id="finishNameInput" type="text" maxlength="16" readonly tabindex="-1">
+            </div>
+          </label>
+          <small id="leaderboardStatus"></small>
+        </div>
+        <div class="finish-actions">
+          <button id="restartButton" type="button">RACE AGAIN <kbd>R</kbd></button>
+          <button id="raceWrButton" type="button">VS WR</button>
+          <button id="raceSelfButton" type="button">VS YOU</button>
+        </div>
+      </div>
+    </section>
+    </div>
+
+    <footer class="controls-hint">
+      <span><kbd>WASD</kbd> / <kbd>↑↓←→</kbd> MOVE + COUNTERSTEER BRAKE</span>
+      <span><kbd>SPACE</kbd> CONTROLLED DRIFT</span>
+      <span><kbd>R</kbd> RESTART</span>
+    </footer>
+
+    <div class="touch-controls" aria-label="Touch controls">
+      <div class="dpad">
+        <button data-key="up" class="up" aria-label="Up">▲</button>
+        <button data-key="left" class="left" aria-label="Left">◀</button>
+        <button data-key="down" class="down" aria-label="Down">▼</button>
+        <button data-key="right" class="right" aria-label="Right">▶</button>
+      </div>
+      <button data-key="brake" class="brake-button">BRAKE<br><small>DRIFT</small></button>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
