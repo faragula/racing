@@ -73,9 +73,9 @@ const DAILY_COLS = 6;
 const DAILY_ROWS = 6;
 const DAILY_SLIP = 260;
 const dailySeedCache = new Map();
-const AUTH_SESSION_STORAGE_KEY = "ice-hockey-drone-auth-session";
-const BASE_GHOST_STORAGE_KEY = "ice-hockey-drone-best-ghost";
-const LEADERBOARD_CONFIG = window.ICE_HOCKEY_LEADERBOARD || {};
+const AUTH_SESSION_STORAGE_KEY = "mania2d-auth-session";
+const BASE_GHOST_STORAGE_KEY = "mania2d-best-ghost";
+const LEADERBOARD_CONFIG = window.MANIA2D_LEADERBOARD || {};
 const LEADERBOARD_LIMIT = 10;
 const MAX_GHOST_FRAMES = 4000;
 const TILE_SIZE = 240;
@@ -125,6 +125,8 @@ let dailyOffset = 0;
 let ghostPick = "wr";
 let inLobby = true;
 let lastSeenDateKey = "";
+let dailyTrackResolved = false;
+let dailyTrackRequestId = 0;
 let authMode = "login";
 let authSession = null;
 let currentUser = null;
@@ -303,9 +305,11 @@ function applyTrackSeed(seedString, { resetGhostPick = false } = {}) {
     }
     resetGame();
     refreshLeaderboard();
+    return true;
   } catch (error) {
     seedStatus.textContent = error.message;
     seedStatus.dataset.state = "error";
+    return false;
   }
 }
 
@@ -323,6 +327,11 @@ function utcDateKey(date) {
   const month = String(date.getUTCMonth() + 1).padStart(2, "0");
   const day = String(date.getUTCDate()).padStart(2, "0");
   return `${year}${month}${day}`;
+}
+
+function utcDateSql(date) {
+  const key = utcDateKey(date);
+  return `${key.slice(0, 4)}-${key.slice(4, 6)}-${key.slice(6, 8)}`;
 }
 
 function formatCzechUtcDate(date) {
@@ -396,18 +405,59 @@ function updateDailyLabels() {
   }
 }
 
-function applyDailyTrack(offset) {
+async function applyDailyTrack(offset) {
+  const requestId = ++dailyTrackRequestId;
   dailyOffset = offset;
+  dailyTrackResolved = false;
   inLobby = true;
   todayButton.classList.toggle("active", offset === 0);
   yesterdayButton.classList.toggle("active", offset === -1);
+  updateDailyLabels();
+
+  let seed;
   try {
-    applyTrackSeed(dailySeedForOffset(offset), { resetGhostPick: true });
+    seed = dailySeedForOffset(offset);
   } catch (error) {
     seedStatus.textContent = error.message;
     seedStatus.dataset.state = "error";
+    return;
   }
-  updateDailyLabels();
+
+  let source = "local";
+  let resolveError = "";
+  if (currentUser && isLeaderboardConfigured()) {
+    seedStatus.textContent = "Loading official daily track…";
+    delete seedStatus.dataset.state;
+    try {
+      const track = await requestRpc("get_or_create_daily_track", {
+        p_session_token: authSession.session_token,
+        p_race_date: utcDateSql(utcDateFromOffset(offset)),
+        p_default_seed: seed,
+      });
+      if (requestId !== dailyTrackRequestId || playMode !== "daily") return;
+      if (Number(track.slip) !== DAILY_SLIP || Number(track.track_version) !== TRACK_VERSION) {
+        throw new Error("The scheduled track uses an unsupported game version.");
+      }
+      seed = track.seed;
+      source = track.source;
+      dailyTrackResolved = true;
+    } catch (error) {
+      if (requestId !== dailyTrackRequestId || playMode !== "daily") return;
+      resolveError = error.message || "Could not load the official daily track.";
+    }
+  }
+
+  const applied = applyTrackSeed(seed, { resetGhostPick: true });
+  if (!applied) {
+    dailyTrackResolved = false;
+    return;
+  }
+  if (resolveError) {
+    seedStatus.textContent = `${resolveError} · practice only`;
+    seedStatus.dataset.state = "error";
+  } else if (source !== "local") {
+    seedStatus.textContent += source === "planned" ? " · planned daily" : " · daily";
+  }
 }
 
 function setPlayMode(mode) {
@@ -422,6 +472,8 @@ function setPlayMode(mode) {
     slipSlider.disabled = true;
     applyDailyTrack(0);
   } else {
+    dailyTrackResolved = false;
+    dailyTrackRequestId += 1;
     slipSlider.disabled = false;
     applySeedFromInput();
   }
@@ -1069,7 +1121,7 @@ function isBoardTrack() {
 }
 
 function canSubmitScore() {
-  return Boolean(currentUser) && isBoardTrack() && dailyOffset === 0 && currentTrack.seed === dailySeedForOffset(0);
+  return Boolean(currentUser) && dailyTrackResolved && isBoardTrack() && dailyOffset === 0;
 }
 
 function isLeaderboardConfigured() {
@@ -1177,7 +1229,8 @@ function unlockGame(session) {
     if (ghostPick === "self") setActiveGhost(localGhost);
   }
   updateBestTime();
-  refreshLeaderboard();
+  if (isDailyMode()) applyDailyTrack(dailyOffset);
+  else refreshLeaderboard();
 }
 
 function lockGame(message = "") {
