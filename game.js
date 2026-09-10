@@ -1037,7 +1037,7 @@ function generateTrack(seedString) {
       skippedPairs.add(`${cellKey(longCorner.next.x, longCorner.next.y)}>${cellKey(longCorner.nextOutside.x, longCorner.nextOutside.y)}`);
     });
 
-    const centerline = [edgePoint(track, start), ...path.map((cell) => cellCenter(track, cell)), edgePoint(track, finish)];
+    const centerline = [edgePoint(track, start), ...path.map((cell) => cellCenter(track, cell))];
     for (let index = 0; index < centerline.length - 1; index += 1) {
       if (index > 0 && index < path.length) {
         const fromCell = path[index - 1];
@@ -1732,6 +1732,15 @@ function closestPointOnSegment(point, segment) {
   };
 }
 
+function getTrackAllowedRadius(track) {
+  return Math.max(14, track.roadHalfWidth - PLAYER_RADIUS * 0.2);
+}
+
+function getVisibleTileConnections(tile) {
+  if (tile.type !== "finish") return tile.connections;
+  return tile.connections.filter((direction) => direction !== currentTrack.finish.outward);
+}
+
 function constrainPlayerToTrack(previousX, previousY) {
   if (!currentTrack) return;
   let closest = null;
@@ -1746,7 +1755,7 @@ function constrainPlayerToTrack(previousX, previousY) {
     }
   }
 
-  const allowedRadius = Math.max(14, currentTrack.roadHalfWidth - PLAYER_RADIUS * 0.2);
+  const allowedRadius = getTrackAllowedRadius(currentTrack);
   if (!closest || bestDistance <= allowedRadius) return;
 
   let nx = player.x - closest.x;
@@ -1898,7 +1907,7 @@ function update(dt, now) {
     recordRunFrame();
   }
 
-  if (started && Math.hypot(player.x - currentTrack.finishCenter.x, player.y - currentTrack.finishCenter.y) < currentTrack.tileSize * 0.28) {
+  if (started && Math.hypot(player.x - currentTrack.finishCenter.x, player.y - currentTrack.finishCenter.y) <= getTrackAllowedRadius(currentTrack) + 1) {
     checkpointFlash = 0.45;
     finishGame();
   }
@@ -2084,13 +2093,19 @@ function drawMinimap() {
       if (tile && !isLongCornerCell) {
         ctx.strokeStyle = tile.type === "start" ? "#72ffc0" : tile.type === "finish" ? "#ffd795" : "rgba(86, 241, 255, 0.5)";
         ctx.lineWidth = Math.max(1, size * 0.12);
-        for (const direction of tile.connections) {
+        for (const direction of getVisibleTileConnections(tile)) {
           const dx = DIRS[direction].dx * size * 0.36;
           const dy = DIRS[direction].dy * size * 0.36;
           ctx.beginPath();
           ctx.moveTo(mapX + left + size / 2, mapY + top + size / 2);
           ctx.lineTo(mapX + left + size / 2 + dx, mapY + top + size / 2 + dy);
           ctx.stroke();
+        }
+        if (tile.type === "finish") {
+          ctx.fillStyle = "#ffd795";
+          ctx.beginPath();
+          ctx.arc(mapX + left + size / 2, mapY + top + size / 2, Math.max(2, size * 0.18), 0, Math.PI * 2);
+          ctx.fill();
         }
       }
     }
@@ -2163,12 +2178,14 @@ function drawGridCell(x, y, now) {
     W: { x: left, y: center.y },
   };
 
+  const roadConnections = getVisibleTileConnections(tile);
+
   ctx.lineCap = "round";
   ctx.shadowColor = tile.type === "finish" ? "rgba(255, 208, 112, 0.22)" : "rgba(86, 241, 255, 0.18)";
   ctx.shadowBlur = 14;
   ctx.strokeStyle = "#17343d";
   ctx.lineWidth = roadWidth + 16;
-  tile.connections.forEach((direction) => {
+  roadConnections.forEach((direction) => {
     ctx.beginPath();
     ctx.moveTo(center.x, center.y);
     ctx.lineTo(localEdge[direction].x, localEdge[direction].y);
@@ -2177,25 +2194,36 @@ function drawGridCell(x, y, now) {
   ctx.shadowBlur = 0;
   ctx.strokeStyle = tile.type === "finish" ? "#ffc97b" : tile.type === "start" ? "#72ffc0" : "#d8f5f7";
   ctx.lineWidth = roadWidth;
-  tile.connections.forEach((direction) => {
+  roadConnections.forEach((direction) => {
     ctx.beginPath();
     ctx.moveTo(center.x, center.y);
     ctx.lineTo(localEdge[direction].x, localEdge[direction].y);
     ctx.stroke();
   });
 
-  ctx.fillStyle = tile.type === "corner" ? "#b9ff55" : tile.type === "finish" ? "#ffd795" : "#56f1ff";
-  ctx.beginPath();
-  ctx.arc(center.x, center.y, roadWidth * 0.36 + Math.sin(now * 0.005 + x + y) * 0.6, 0, Math.PI * 2);
-  ctx.fill();
+  const pulse = Math.sin(now * 0.005 + x + y) * 0.6;
+  if (tile.type === "finish") {
+    ctx.fillStyle = "#ffd795";
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, roadWidth * 0.36 + pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#ffc97b";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, currentTrack.roadHalfWidth * 0.72 + pulse, 0, Math.PI * 2);
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = tile.type === "corner" ? "#b9ff55" : "#56f1ff";
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, roadWidth * 0.36 + pulse, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
-  if (tile.type === "start" || tile.type === "finish") {
-    const outsideDirection = tile.type === "start" ? currentTrack.start.outward : currentTrack.finish.outward;
-    const primaryDirection = tile.connections.find((direction) => direction !== outsideDirection);
+  if (tile.type === "start") {
+    const primaryDirection = tile.connections.find((direction) => direction !== currentTrack.start.outward);
     const vector = DIRS[primaryDirection];
     const normal = { x: -vector.dy, y: vector.dx };
-    const stripeColor = tile.type === "start" ? "rgba(114, 255, 192, 0.8)" : "rgba(255, 215, 149, 0.85)";
-    ctx.strokeStyle = stripeColor;
+    ctx.strokeStyle = "rgba(114, 255, 192, 0.8)";
     ctx.lineWidth = 4;
     for (let index = -1; index <= 1; index += 1) {
       const offset = index * 9;
@@ -2268,12 +2296,12 @@ function drawGhost() {
   ctx.translate(pose.x, pose.y);
   ctx.rotate(pose.angle);
   ctx.globalAlpha = 0.34;
-  ctx.globalCompositeOperation = "lighter";
-  ctx.shadowColor = "#9af7ff";
+  ctx.globalCompositeOperation = "source-over";
+  ctx.shadowColor = "#000000";
   ctx.shadowBlur = 18;
 
-  ctx.fillStyle = "rgba(154, 247, 255, 0.34)";
-  ctx.strokeStyle = "#bffbff";
+  ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
+  ctx.strokeStyle = "#000000";
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(21, 0);
@@ -2287,7 +2315,7 @@ function drawGhost() {
   ctx.stroke();
 
   ctx.shadowBlur = 0;
-  ctx.strokeStyle = "rgba(191, 251, 255, 0.8)";
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
   ctx.beginPath();
   ctx.moveTo(12, 0);
   ctx.lineTo(3, -8);
@@ -2298,7 +2326,7 @@ function drawGhost() {
   ctx.stroke();
 
   ctx.rotate(-pose.angle);
-  ctx.fillStyle = "#bffbff";
+  ctx.fillStyle = "#000000";
   ctx.textAlign = "center";
   ctx.font = "bold 9px Arial";
   ctx.fillText(activeGhost.name || "GHOST", 0, -29);
