@@ -1,7 +1,8 @@
 "use strict";
 
 const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+const viewCtx = canvas.getContext("2d", { alpha: false });
+let ctx = viewCtx;
 const timerElement = document.getElementById("timer");
 const bestTimeElement = document.getElementById("bestTime");
 const startPrompt = document.getElementById("startPrompt");
@@ -103,6 +104,7 @@ const player = {
 };
 
 let currentTrack = null;
+let trackLayer = null;
 let started = false;
 let finished = false;
 let startTime = 0;
@@ -303,6 +305,7 @@ function applyTrackSeed(seedString, { resetGhostPick = false } = {}) {
     } else {
       setActiveGhost(localGhost);
     }
+    rebuildTrackLayer();
     resetGame();
     refreshLeaderboard();
     return true;
@@ -1960,12 +1963,44 @@ function finishGame() {
   }
 }
 
+function rebuildTrackLayer() {
+  trackLayer = null;
+  if (!currentTrack) return;
+  const width = Math.ceil(currentTrack.worldWidth);
+  const height = Math.ceil(currentTrack.worldHeight);
+  if (width < 1 || height < 1 || width * height > 4096 * 4096) return;
+
+  const layer = document.createElement("canvas");
+  layer.width = width;
+  layer.height = height;
+  const layerCtx = layer.getContext("2d", { alpha: false });
+  if (!layerCtx) return;
+
+  const previous = ctx;
+  ctx = layerCtx;
+  try {
+    drawArena(0);
+    trackLayer = layer;
+  } finally {
+    ctx = previous;
+  }
+}
+
 function draw(now) {
-  ctx.clearRect(0, 0, WIDTH, HEIGHT);
-  drawBackground();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (trackLayer) {
+    ctx.drawImage(trackLayer, -camera.x, -camera.y);
+  } else {
+    ctx.clearRect(0, 0, WIDTH, HEIGHT);
+    drawBackground();
+    ctx.save();
+    ctx.translate(-camera.x, -camera.y);
+    drawArena(now);
+    ctx.restore();
+  }
+
   ctx.save();
   ctx.translate(-camera.x, -camera.y);
-  drawArena(now);
   drawGhost();
   drawTrails();
   drawPlayer(now);
@@ -2181,8 +2216,6 @@ function drawGridCell(x, y, now) {
   const roadConnections = getVisibleTileConnections(tile);
 
   ctx.lineCap = "round";
-  ctx.shadowColor = tile.type === "finish" ? "rgba(255, 208, 112, 0.22)" : "rgba(86, 241, 255, 0.18)";
-  ctx.shadowBlur = 14;
   ctx.strokeStyle = "#17343d";
   ctx.lineWidth = roadWidth + 16;
   roadConnections.forEach((direction) => {
@@ -2191,7 +2224,6 @@ function drawGridCell(x, y, now) {
     ctx.lineTo(localEdge[direction].x, localEdge[direction].y);
     ctx.stroke();
   });
-  ctx.shadowBlur = 0;
   ctx.strokeStyle = tile.type === "finish" ? "#ffc97b" : tile.type === "start" ? "#72ffc0" : "#d8f5f7";
   ctx.lineWidth = roadWidth;
   roadConnections.forEach((direction) => {
@@ -2263,13 +2295,10 @@ function drawLongCorner(longCorner, now) {
 
   ctx.save();
   ctx.lineCap = "round";
-  ctx.shadowColor = "rgba(185, 255, 85, 0.24)";
-  ctx.shadowBlur = 16;
   ctx.strokeStyle = "#17343d";
   ctx.lineWidth = roadWidth + 16;
   strokeCurve();
 
-  ctx.shadowBlur = 0;
   ctx.strokeStyle = "#d8f5f7";
   ctx.lineWidth = roadWidth;
   strokeCurve();
@@ -2297,8 +2326,6 @@ function drawGhost() {
   ctx.rotate(pose.angle);
   ctx.globalAlpha = 0.34;
   ctx.globalCompositeOperation = "source-over";
-  ctx.shadowColor = "#000000";
-  ctx.shadowBlur = 18;
 
   ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
   ctx.strokeStyle = "#000000";
@@ -2314,7 +2341,6 @@ function drawGhost() {
   ctx.fill();
   ctx.stroke();
 
-  ctx.shadowBlur = 0;
   ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
   ctx.beginPath();
   ctx.moveTo(12, 0);
@@ -2367,8 +2393,6 @@ function drawPlayer(now) {
   if (speed > 40) {
     const flame = 8 + (speed / MAX_SPEED) * 13 + Math.sin(now * 0.04) * 2;
     ctx.fillStyle = player.drift > 0.2 ? "#b9ff55" : "#56f1ff";
-    ctx.shadowColor = ctx.fillStyle;
-    ctx.shadowBlur = 12;
     ctx.beginPath();
     ctx.moveTo(-17, -7);
     ctx.lineTo(-17 - flame, 0);
@@ -2376,8 +2400,6 @@ function drawPlayer(now) {
     ctx.fill();
   }
 
-  ctx.shadowColor = player.drift > 0.2 ? "#b9ff55" : "#56f1ff";
-  ctx.shadowBlur = 15;
   ctx.fillStyle = "#d8f5f7";
   ctx.beginPath();
   ctx.moveTo(21, 0);
@@ -2388,7 +2410,6 @@ function drawPlayer(now) {
   ctx.lineTo(9, 14);
   ctx.closePath();
   ctx.fill();
-  ctx.shadowBlur = 0;
 
   ctx.fillStyle = "#17343d";
   ctx.beginPath();
